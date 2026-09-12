@@ -1,0 +1,15 @@
+aiohttp
+beautifulsoup4
+lxml
+playwright
+pydantic
+python-dotenv
+tenacity
+google-generativeai
+groq
+openai
+gspread
+google-auth
+pandas
+python-dateutil
+rapidfuzz
