@@ -29,18 +29,102 @@ async def run_pipeline(
         len(existing_papers),
     )
 
-    # If we already have enough papers, return them.
+    # --------------------------------------------------
+    # STEP 2: If papers already exist, enrich them
+    # --------------------------------------------------
+
     if len(existing_papers) >= max_papers:
 
+        papers_to_process = existing_papers[:max_papers]
+
         logger.info(
-            "Target already reached: %s papers",
-            len(existing_papers),
+            "Target already reached. "
+            "Running GitHub enrichment on %s existing papers.",
+            len(papers_to_process),
         )
 
-        return existing_papers[:max_papers]
+        github_resolver = GitHubResolver()
+
+        enriched_papers = []
+
+        for index, paper in enumerate(
+            papers_to_process,
+            start=1,
+        ):
+
+            # Preserve already valid GitHub data.
+            github_data = {
+                "github_url": paper.get("github_url"),
+                "github_stars": paper.get("github_stars"),
+                "github_confidence": paper.get(
+                    "github_confidence",
+                    0.0,
+                ),
+            }
+
+            # Only search again when GitHub data is missing.
+            if not paper.get("github_url"):
+
+                try:
+
+                    github_data = (
+                        await github_resolver.resolve(
+                            paper.get("title", ""),
+                            paper.get("summary", ""),
+                        )
+                    )
+
+                except Exception as exc:
+
+                    logger.warning(
+                        "GitHub enrichment failed for '%s': %s",
+                        paper.get("title", "Unknown"),
+                        exc,
+                    )
+
+            combined_data = {
+                **paper,
+                **github_data,
+            }
+
+            try:
+
+                validated_paper = ResearchPaper(
+                    **combined_data
+                )
+
+                enriched_papers.append(
+                    validated_paper.model_dump(
+                        mode="json"
+                    )
+                )
+
+            except Exception as exc:
+
+                logger.error(
+                    "Validation failed for '%s': %s",
+                    paper.get("title", "Unknown"),
+                    exc,
+                )
+
+            logger.info(
+                "Processed paper %s/%s",
+                index,
+                len(papers_to_process),
+            )
+
+        # Save enriched records.
+        storage.save(enriched_papers)
+
+        logger.info(
+            "Saved enriched research papers: %s",
+            len(enriched_papers),
+        )
+
+        return enriched_papers
 
     # --------------------------------------------------
-    # STEP 2: Calculate how many new papers are needed
+    # STEP 3: Calculate how many new papers are needed
     # --------------------------------------------------
 
     papers_needed = (
@@ -60,7 +144,7 @@ async def run_pipeline(
     )
 
     # --------------------------------------------------
-    # STEP 3: Collect only new papers
+    # STEP 4: Collect new papers
     # --------------------------------------------------
 
     paper_scraper = ArxivPaperScraper()
@@ -71,12 +155,13 @@ async def run_pipeline(
     )
 
     if not new_papers:
+
         raise RuntimeError(
             "No new research papers were collected."
         )
 
     # --------------------------------------------------
-    # STEP 4: Remove duplicates
+    # STEP 5: Remove duplicates
     # --------------------------------------------------
 
     existing_ids = {
@@ -95,15 +180,19 @@ async def run_pipeline(
             continue
 
         if arxiv_id in existing_ids:
+
             logger.info(
                 "Skipping duplicate paper: %s",
                 arxiv_id,
             )
+
             continue
 
         existing_ids.add(arxiv_id)
 
-        unique_new_papers.append(paper)
+        unique_new_papers.append(
+            paper
+        )
 
     logger.info(
         "Unique new papers: %s",
@@ -111,7 +200,7 @@ async def run_pipeline(
     )
 
     # --------------------------------------------------
-    # STEP 5: GitHub enrichment
+    # STEP 6: GitHub enrichment for new papers
     # --------------------------------------------------
 
     github_resolver = GitHubResolver()
@@ -136,9 +225,11 @@ async def run_pipeline(
 
         try:
 
-            github_data = await github_resolver.resolve(
-                paper["title"],
-                paper.get("summary", ""),
+            github_data = (
+                await github_resolver.resolve(
+                    paper["title"],
+                    paper.get("summary", ""),
+                )
             )
 
         except Exception as exc:
@@ -184,7 +275,7 @@ async def run_pipeline(
         )
 
     # --------------------------------------------------
-    # STEP 6: Combine old + new
+    # STEP 7: Combine old + new
     # --------------------------------------------------
 
     combined_papers = (
@@ -192,8 +283,12 @@ async def run_pipeline(
         + processed_new_papers
     )
 
-    # Final duplicate protection.
+    # --------------------------------------------------
+    # STEP 8: Final duplicate protection
+    # --------------------------------------------------
+
     final_papers = []
+
     seen_ids = set()
 
     for paper in combined_papers:
@@ -207,10 +302,13 @@ async def run_pipeline(
             continue
 
         seen_ids.add(arxiv_id)
-        final_papers.append(paper)
+
+        final_papers.append(
+            paper
+        )
 
     # --------------------------------------------------
-    # STEP 7: Make sure target was reached
+    # STEP 9: Make sure target was reached
     # --------------------------------------------------
 
     if len(final_papers) < max_papers:
@@ -220,7 +318,17 @@ async def run_pipeline(
             f"available. Target was {max_papers}."
         )
 
-    final_papers = final_papers[:max_papers]
+    final_papers = final_papers[
+        :max_papers
+    ]
+
+    # --------------------------------------------------
+    # STEP 10: Save final dataset
+    # --------------------------------------------------
+
+    storage.save(
+        final_papers
+    )
 
     logger.info(
         "Final research paper count: %s",
@@ -235,13 +343,18 @@ def save_papers(
 ) -> None:
 
     if not papers:
+
         raise ValueError(
             "Refusing to save an empty paper dataset."
         )
 
-    storage = JSONStorage(OUTPUT_FILE)
+    storage = JSONStorage(
+        OUTPUT_FILE
+    )
 
-    storage.save(papers)
+    storage.save(
+        papers
+    )
 
     logger.info(
         "Saved %s research papers to %s",

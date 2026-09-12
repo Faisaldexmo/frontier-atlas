@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import ssl
-from typing import Iterable
+from typing import Iterable, Optional
 
 import aiohttp
 import certifi
@@ -30,6 +30,7 @@ class BaseScraper:
     - Retry-After support
     - SSL certificate verification
     - Custom User-Agent
+    - Optional per-request headers
     """
 
     def __init__(
@@ -61,10 +62,20 @@ class BaseScraper:
     async def _request(
         self,
         url: str,
+        headers: Optional[dict[str, str]] = None,
     ) -> str:
         """
         Perform one HTTP GET request.
+
+        Optional headers allow authenticated APIs such as
+        GitHub to provide their own credentials without
+        exposing those credentials to unrelated websites.
         """
+
+        request_headers = dict(self.headers)
+
+        if headers:
+            request_headers.update(headers)
 
         timeout = aiohttp.ClientTimeout(
             total=self.timeout_seconds
@@ -80,7 +91,7 @@ class BaseScraper:
         async with aiohttp.ClientSession(
             timeout=timeout,
             connector=connector,
-            headers=self.headers,
+            headers=request_headers,
         ) as session:
 
             async with session.get(
@@ -129,6 +140,7 @@ class BaseScraper:
     async def fetch(
         self,
         url: str,
+        headers: Optional[dict[str, str]] = None,
     ) -> str:
         """
         Fetch a URL with concurrency control
@@ -161,7 +173,8 @@ class BaseScraper:
             )
             async def _fetch_with_retry():
                 return await self._request(
-                    url
+                    url,
+                    headers=headers,
                 )
 
             return await _fetch_with_retry()

@@ -47,6 +47,24 @@ async def run_news_pipeline(
         len(news),
     )
 
+    # --------------------------------------------------
+    # SAVE FRESH NEWS
+    # --------------------------------------------------
+
+    storage = JSONStorage(
+        OUTPUT_FILE
+    )
+
+    storage.save(
+        news
+    )
+
+    logger.info(
+        "Saved %s fresh news articles to %s",
+        len(news),
+        OUTPUT_FILE,
+    )
+
     return news
 
 
@@ -71,4 +89,22 @@ def save_news(
         "Saved %s news articles to %s",
         len(news),
         OUTPUT_FILE,
+    )
+
+
+if __name__ == "__main__":
+
+    import asyncio
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+
+    news = asyncio.run(
+        run_news_pipeline()
+    )
+
+    print(
+        f"\nNEWS SAVED: {len(news)}"
     )
